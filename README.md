@@ -1,4 +1,4 @@
-# Debugger host for my [programing language](https://github.com/banszkyy/BBLang)
+# Debugger host for my [programing language](https://github.com/banszkyy/Vibrissa)
 
 [![.Net 11.0](https://img.shields.io/badge/.NET-11.0-5C2D91?style=flat-square)](#)
 
