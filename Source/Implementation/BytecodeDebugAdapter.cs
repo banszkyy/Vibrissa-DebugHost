@@ -1,6 +1,6 @@
 using System.IO;
 using System.Threading;
-using LanguageCore.BBLang.Generator;
+using LanguageCore.Bytecode.Generator;
 using LanguageCore.Compiler;
 using LanguageCore.Runtime;
 
@@ -9,7 +9,7 @@ namespace DebugServer;
 partial class BytecodeDebugAdapter : BytecodeDebugAdapterBase
 {
     CompilerResult _compiled;
-    BBLangGeneratorResult _generated;
+    BytecodeGeneratorResult _generated;
     BytecodeProcessor? _processor;
     protected bool IsDisconnected;
     bool _isStopped;

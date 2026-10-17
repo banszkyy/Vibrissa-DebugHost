@@ -6,7 +6,7 @@ using System.IO;
 using System.Text;
 using System.Threading;
 using LanguageCore;
-using LanguageCore.BBLang.Generator;
+using LanguageCore.Bytecode.Generator;
 using LanguageCore.Compiler;
 using LanguageCore.Parser;
 using LanguageCore.Runtime;

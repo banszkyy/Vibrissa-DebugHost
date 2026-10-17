@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using LanguageCore;
-using LanguageCore.BBLang.Generator;
+using LanguageCore.Bytecode.Generator;
 using LanguageCore.Compiler;
 using LanguageCore.Runtime;
 using Microsoft.VisualStudio.Shared.VSCodeDebugProtocol.Messages;

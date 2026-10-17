@@ -4,7 +4,7 @@ using System.Collections.Immutable;
 using System.IO;
 using System.Text;
 using LanguageCore;
-using LanguageCore.BBLang.Generator;
+using LanguageCore.Bytecode.Generator;
 using LanguageCore.Compiler;
 using LanguageCore.Runtime;
 using LanguageCore.Workspaces;

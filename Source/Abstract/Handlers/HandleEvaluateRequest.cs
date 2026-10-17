@@ -6,7 +6,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text;
 using LanguageCore;
-using LanguageCore.BBLang.Generator;
+using LanguageCore.Bytecode.Generator;
 using LanguageCore.Compiler;
 using LanguageCore.Runtime;
 using Microsoft.VisualStudio.Shared.VSCodeDebugProtocol.Messages;
@@ -125,7 +125,7 @@ partial class BytecodeDebugAdapterBase
 
         try
         {
-            BBLangGeneratorResult generated = CodeGeneratorForMain.Generate(compiled, new(MainGeneratorSettings.Default)
+            BytecodeGeneratorResult generated = CodeGeneratorForMain.Generate(compiled, new(MainGeneratorSettings.Default)
             {
                 IsExpression = true,
             }, null, diagnostics);
