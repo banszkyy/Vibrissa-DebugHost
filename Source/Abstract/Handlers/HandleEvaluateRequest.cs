@@ -332,6 +332,11 @@ partial class BytecodeDebugAdapterBase
                     },
                     _ => throw new UnreachableException(),
                 },
+                PointerType => new EvaluateResponse()
+                {
+                    Result = $"0x{Convert.ToString(m.Get<int>(resultAddress), 16)}",
+                    Type = resultType.ToString(),
+                },
                 _ => new EvaluateResponse()
                 {
                     Result = resultType.ToString(),
@@ -342,7 +347,6 @@ partial class BytecodeDebugAdapterBase
         else
         {
             StringBuilder b = new();
-            b.AppendLine("Failed to evaluate");
             diagnostics.WriteErrorsTo(b);
             if (error is not null) b.AppendLine(error.ToString());
             Protocol.SendEvent(new OutputEvent()
@@ -357,7 +361,7 @@ partial class BytecodeDebugAdapterBase
                 PresentationHint = new()
                 {
                     Attributes = VariablePresentationHint.AttributesValue.FailedEvaluation,
-                }
+                },
             };
         }
     }

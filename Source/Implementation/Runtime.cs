@@ -58,7 +58,7 @@ partial class BytecodeDebugAdapter
 
                     if (StopReason is not StopReason_StepInstruction)
                     {
-                        if (!DebugInformation.TryGetSourceLocation(_processor.Registers.CodePointer, out sourceLocation) || sourceLocation.IsSubtle)
+                        if (sourceLocation.IsSubtle || !DebugInformation.TryGetSourceLocation(_processor.Registers.CodePointer, out sourceLocation))
                         {
                             goto _procceed;
                         }

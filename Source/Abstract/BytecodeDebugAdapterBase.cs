@@ -78,14 +78,12 @@ public abstract partial class BytecodeDebugAdapterBase : DebugAdapterBase
         public readonly int Id;
         public readonly FetchedScopeKind Kind;
         public readonly ImmutableArray<FetchedVariable> Variables;
-        public readonly ScopeInformation Value;
 
-        public FetchedScope(int id, FetchedScopeKind kind, ImmutableArray<FetchedVariable> variables, ScopeInformation value)
+        public FetchedScope(int id, FetchedScopeKind kind, ImmutableArray<FetchedVariable> variables)
         {
             Id = id;
             Kind = kind;
             Variables = variables;
-            Value = value;
         }
     }
 
@@ -188,6 +186,43 @@ public abstract partial class BytecodeDebugAdapterBase : DebugAdapterBase
         }
     }
 
+    protected static bool TryGetValue(Range<int> address, ReadOnlySpan<byte> memory, GeneralType type, out CompiledValue value)
+    {
+        value = CompiledValue.Null;
+        if (type.FinalValue is not BuiltinType builtinType) return false;
+
+        switch (builtinType.Type)
+        {
+            case BasicType.U8:
+                value = new(memory.Get<byte>(address.Start));
+                return true;
+            case BasicType.I8:
+                value = new(memory.Get<sbyte>(address.Start));
+                return true;
+            case BasicType.U16:
+                value = new(memory.Get<ushort>(address.Start));
+                return true;
+            case BasicType.I16:
+                value = new(memory.Get<short>(address.Start));
+                return true;
+            case BasicType.U32:
+                value = new((int)memory.Get<uint>(address.Start));
+                return true;
+            case BasicType.I32:
+                value = new(memory.Get<int>(address.Start));
+                return true;
+            case BasicType.F32:
+                value = new(memory.Get<float>(address.Start));
+                return true;
+            case BasicType.U64:
+            case BasicType.I64:
+            case BasicType.Void:
+            case BasicType.Any:
+            default:
+                return false;
+        }
+    }
+
     protected static string? GetInternalType(GeneralType type) => type is AliasType aliasType
         && aliasType.Definition.Definition.Attributes.TryGetAttribute(AttributeConstants.InternalType, out AttributeUsage? attribute)
         && attribute.TryGetValue(out string? internalType)
@@ -210,129 +245,153 @@ public abstract partial class BytecodeDebugAdapterBase : DebugAdapterBase
         }
         else
         {
-            string? internalType = GetInternalType(type);
-
-            switch (type.FinalValue)
+            EndlessCheck endlessCheck = new(67);
+            while (true)
             {
-                case BuiltinType v:
-                    if (internalType == InternalTypes.Boolean && TryGetInteger(address, memory, type, out int integer))
-                    {
-                        variable.Value = integer == 0 ? "false" : "true";
-                        break;
-                    }
-                    else if (internalType == InternalTypes.Char && TryGetInteger(address, memory, type, out integer))
-                    {
-                        variable.Value = $"'{((char)integer).Escape()}'";
-                        break;
-                    }
+                endlessCheck.Step();
 
-                    variable.Value = v.Type switch
-                    {
-                        BasicType.Void => "void",
-                        BasicType.Any => "?",
-                        BasicType.U8 => memory.Get<byte>(address.Start).ToString(),
-                        BasicType.I8 => memory.Get<sbyte>(address.Start).ToString(),
-                        BasicType.U16 => memory.Get<ushort>(address.Start).ToString(),
-                        BasicType.I16 => memory.Get<short>(address.Start).ToString(),
-                        BasicType.U32 => memory.Get<uint>(address.Start).ToString(),
-                        BasicType.I32 => memory.Get<int>(address.Start).ToString(),
-                        BasicType.U64 => memory.Get<ulong>(address.Start).ToString(),
-                        BasicType.I64 => memory.Get<long>(address.Start).ToString(),
-                        BasicType.F32 => memory.Get<float>(address.Start).ToString(),
-                        _ => throw new UnreachableException(),
-                    };
-                    break;
-                case IReferenceType v:
+                string? internalType = GetInternalType(type);
+
+                switch (type.FinalValue)
                 {
-                    int pointerValue = memory.Get<int>(address.Start);
-                    variable.Value = $"0x{Convert.ToString(pointerValue, 16)}";
-
-                    if (v.To.Is(out ArrayType? toArray)
-                        && (internalType == InternalTypes.String || GetInternalType(toArray.Of) == InternalTypes.Char)
-                        && StatementCompiler.FindSize(toArray.Of, out int elementSize, out _, CodeGeneratorForMain.DefaultCompilerSettings.RuntimeInfo))
-                    {
-                        StringBuilder valueBuilder = new();
-                        bool finished = false;
-                        for (int i = 0; i < 16; i++)
+                    case BuiltinType v:
+                        if (internalType == InternalTypes.Boolean && TryGetInteger(address, memory, type, out int integer))
                         {
-                            if (TryGetInteger(new Range<int>(pointerValue + (i * elementSize), pointerValue + ((i + 1) * elementSize) - 1), memory, toArray.Of, out int element))
-                            {
-                                if (element == 0)
-                                {
-                                    finished = true;
-                                    break;
-                                }
-                                else
-                                {
-                                    _ = valueBuilder.Append((char)element);
-                                }
-                            }
-                            else
-                            {
-                                goto failed;
-                            }
+                            variable.Value = integer == 0 ? "false" : "true";
+                            break;
                         }
-                        variable.Value = $"{variable.Value} \"{valueBuilder.ToString().Escape()}{(finished ? "\"" : "...")}";
-                    }
-                failed:
+                        else if (internalType == InternalTypes.Char && TryGetInteger(address, memory, type, out integer))
+                        {
+                            variable.Value = $"'{((char)integer).Escape()}'";
+                            break;
+                        }
 
-                    if (StatementCompiler.FindSize(v.To, out _, out _, CodeGeneratorForMain.DefaultCompilerSettings.RuntimeInfo))
+                        variable.Value = v.Type switch
+                        {
+                            BasicType.Void => "void",
+                            BasicType.Any => "?",
+                            BasicType.U8 => memory.Get<byte>(address.Start).ToString(),
+                            BasicType.I8 => memory.Get<sbyte>(address.Start).ToString(),
+                            BasicType.U16 => memory.Get<ushort>(address.Start).ToString(),
+                            BasicType.I16 => memory.Get<short>(address.Start).ToString(),
+                            BasicType.U32 => memory.Get<uint>(address.Start).ToString(),
+                            BasicType.I32 => memory.Get<int>(address.Start).ToString(),
+                            BasicType.U64 => memory.Get<ulong>(address.Start).ToString(),
+                            BasicType.I64 => memory.Get<long>(address.Start).ToString(),
+                            BasicType.F32 => memory.Get<float>(address.Start).ToString(),
+                            _ => throw new UnreachableException(),
+                        };
+                        break;
+                    case IReferenceType v:
                     {
-                        variable.VariablesReference = DiscoverIndirectVariables(pointerValue, v.To, memory, name, ref ids);
-                    }
-                    break;
-                }
-                case ArrayType v:
-                {
-                    if (v.Length.HasValue && StatementCompiler.FindSize(v.Of, out int elementSize, out _, CodeGeneratorForMain.DefaultCompilerSettings.RuntimeInfo))
-                    {
-                        variable.Value = "[...]";
+                        int pointerValue = memory.Get<int>(address.Start);
+                        variable.Value = $"0x{Convert.ToString(pointerValue, 16)}";
 
-                        if (internalType == InternalTypes.String || GetInternalType(v.Of) == InternalTypes.Char)
+                        if (v.To.Is(out ArrayType? toArray)
+                            && (internalType == InternalTypes.String || GetInternalType(toArray.Of) == InternalTypes.Char)
+                            && StatementCompiler.FindSize(toArray.Of, out int elementSize, out _, CodeGeneratorForMain.DefaultCompilerSettings.RuntimeInfo))
                         {
                             StringBuilder valueBuilder = new();
-                            for (int i = 0; i < v.Length.Value; i++)
+                            bool finished = false;
+                            for (int i = 0; i < 16; i++)
                             {
-                                if (TryGetInteger(new Range<int>(address.Start + (i * elementSize), address.Start + ((i + 1) * elementSize) - 1), memory, v.Of, out int element))
+                                if (TryGetInteger(new Range<int>(pointerValue + (i * elementSize), pointerValue + ((i + 1) * elementSize) - 1), memory, toArray.Of, out int element))
                                 {
-                                    _ = valueBuilder.Append((char)element);
+                                    if (element == 0)
+                                    {
+                                        finished = true;
+                                        break;
+                                    }
+                                    else
+                                    {
+                                        _ = valueBuilder.Append((char)element);
+                                    }
                                 }
                                 else
                                 {
                                     goto failed;
                                 }
                             }
-                            variable.Value = $"\"{valueBuilder.ToString().Escape()}\"";
+                            variable.Value = $"{variable.Value} \"{valueBuilder.ToString().Escape()}{(finished ? "\"" : "...")}";
                         }
                     failed:
 
-                        variable.IndexedVariables = v.Length.Value;
-                        variable.VariablesReference = DiscoverIndirectVariables(address.Start, v, memory, name, ref ids);
+                        if (StatementCompiler.FindSize(v.To, out _, out _, CodeGeneratorForMain.DefaultCompilerSettings.RuntimeInfo))
+                        {
+                            variable.VariablesReference = DiscoverIndirectVariables(pointerValue, v.To, memory, name, ref ids);
+                        }
+                        break;
                     }
-                    else
+                    case ArrayType v:
                     {
-                        variable.Value = "[?]";
+                        if (v.Length.HasValue && StatementCompiler.FindSize(v.Of, out int elementSize, out _, CodeGeneratorForMain.DefaultCompilerSettings.RuntimeInfo))
+                        {
+                            variable.Value = "[...]";
+
+                            if (internalType == InternalTypes.String || GetInternalType(v.Of) == InternalTypes.Char)
+                            {
+                                StringBuilder valueBuilder = new();
+                                for (int i = 0; i < v.Length.Value; i++)
+                                {
+                                    if (TryGetInteger(new Range<int>(address.Start + (i * elementSize), address.Start + ((i + 1) * elementSize) - 1), memory, v.Of, out int element))
+                                    {
+                                        _ = valueBuilder.Append((char)element);
+                                    }
+                                    else
+                                    {
+                                        goto failed;
+                                    }
+                                }
+                                variable.Value = $"\"{valueBuilder.ToString().Escape()}\"";
+                            }
+                        failed:
+
+                            variable.IndexedVariables = v.Length.Value;
+                            variable.VariablesReference = DiscoverIndirectVariables(address.Start, v, memory, name, ref ids);
+                        }
+                        else
+                        {
+                            variable.Value = "[?]";
+                        }
+                        break;
                     }
-                    break;
+                    case StructType v:
+                    {
+                        variable.Value = "{...}";
+                        variable.VariablesReference = DiscoverIndirectVariables(address.Start, v, memory, name, ref ids);
+                        variable.NamedVariables = v.Struct.Fields.Length;
+                        break;
+                    }
+                    case FunctionType:
+                    {
+                        int pointerValue = memory.Get<int>(address.Start);
+                        variable.Value = $"0x{Convert.ToString(pointerValue, 16)}";
+                        break;
+                    }
+                    case EnumType v:
+                        if (TryGetValue(address, memory, v.Definition.Type.FinalValue, out CompiledValue w))
+                        {
+                            foreach (CompiledEnumMember member in v.Definition.Members)
+                            {
+                                if (member.Value is CompiledConstantValue x && x.Value == w)
+                                {
+                                    variable.Value = $"{v.Definition.Identifier}.{member.Identifier}";
+                                    break;
+                                }
+                            }
+                        }
+                        type = v.Definition.Type;
+                        continue;
+                    case AliasType:
+                        throw new UnreachableException();
+                    case GenericType v:
+                        variable.Value = v.Identifier;
+                        break;
+                    default:
+                        throw new UnreachableException();
                 }
-                case StructType v:
-                {
-                    variable.Value = "{...}";
-                    variable.VariablesReference = DiscoverIndirectVariables(address.Start, v, memory, name, ref ids);
-                    variable.NamedVariables = v.Struct.Fields.Length;
-                    break;
-                }
-                case FunctionType:
-                {
-                    int pointerValue = memory.Get<int>(address.Start);
-                    variable.Value = $"0x{Convert.ToString(pointerValue, 16)}";
-                    break;
-                }
-                case GenericType:
-                case AliasType:
-                case EnumType:
-                default:
-                    throw new UnreachableException();
+
+                break;
             }
         }
 
@@ -420,16 +479,17 @@ public abstract partial class BytecodeDebugAdapterBase : DebugAdapterBase
             List<FetchedScope> frameScopes = new();
             FetchedVariable? globalVariablesAddress = null;
 
+            List<FetchedVariable> globals = new();
+            List<FetchedVariable> locals = new();
+            List<FetchedVariable> arguments = new();
+            List<FetchedVariable> internals = new();
+            List<FetchedVariable> returnValue = new();
+
             foreach (ScopeInformation scope in _scopes)
             {
-                List<FetchedVariable> globals = new();
-                List<FetchedVariable> locals = new();
-                List<FetchedVariable> arguments = new();
-                List<FetchedVariable> internals = new();
-                List<FetchedVariable> returnValue = new();
-
                 foreach (StackElementInformation item in scope.Stack)
                 {
+                    if (item.Valid != 0 && !item.Valid.Contains(Processor.Registers.CodePointer)) continue;
                     //Log.Trace($"{item.Type} {item.Identifier}");
                     (item.Kind switch
                     {
@@ -440,56 +500,62 @@ public abstract partial class BytecodeDebugAdapterBase : DebugAdapterBase
                         _ => throw new UnreachableException(),
                     }).Add(new FetchedVariable(item));
                 }
+            }
 
-                foreach (FetchedVariable item in internals)
+            foreach (FetchedVariable item in internals)
+            {
+                if (item.Value.Identifier == "Absolute Global Offset")
                 {
-                    if (item.Value.Identifier == "Absolute Global Offset")
-                    {
-                        globalVariablesAddress = item;
-                        //Log.Trace($"Global variable offset captured");
-                    }
-                    //Log.Trace($"Ignoring internal stack item {item.Value.Type} {item.Value.Identifier} ({item.Value.Size} bytes at {(item.Value.BasePointerRelative ? "BP+" : "ABS+")}{item.Value.Address})");
+                    globalVariablesAddress = item;
+                    //Log.Trace($"Global variable offset captured");
                 }
+                //Log.Trace($"Ignoring internal stack item {item.Value.Type} {item.Value.Identifier} ({item.Value.Size} bytes at {(item.Value.BasePointerRelative ? "BP+" : "ABS+")}{item.Value.Address})");
+            }
 
-                if (locals.Count > 0)
-                {
-                    frameScopes.Add(new FetchedScope(
-                        CurrentUniqueIds.Next(),
-                        FetchedScopeKind.Locals,
-                        locals.ToImmutableArray(),
-                        scope
-                    ));
-                }
+            if (locals.Count > 0)
+            {
+                frameScopes.Add(new FetchedScope(
+                    CurrentUniqueIds.Next(),
+                    FetchedScopeKind.Locals,
+                    locals.ToImmutableArray()
+                ));
+            }
 
-                if (arguments.Count > 0)
-                {
-                    frameScopes.Add(new FetchedScope(
-                        CurrentUniqueIds.Next(),
-                        FetchedScopeKind.Arguments,
-                        arguments.ToImmutableArray(),
-                        scope
-                    ));
-                }
+            if (arguments.Count > 0)
+            {
+                frameScopes.Add(new FetchedScope(
+                    CurrentUniqueIds.Next(),
+                    FetchedScopeKind.Arguments,
+                    arguments.ToImmutableArray()
+                ));
+            }
 
-                if (globals.Count > 0)
-                {
-                    frameScopes.Add(new FetchedScope(
-                        CurrentUniqueIds.Next(),
-                        FetchedScopeKind.Globals,
-                        globals.ToImmutableArray(),
-                        scope
-                    ));
-                }
+            if (globals.Count > 0)
+            {
+                frameScopes.Add(new FetchedScope(
+                    CurrentUniqueIds.Next(),
+                    FetchedScopeKind.Globals,
+                    globals.ToImmutableArray()
+                ));
+            }
 
-                //if (returnValue.Count > 0)
-                //{
-                //    frameScopes.Add(new FetchedScope(
-                //        CurrentUniqueIds.Next(),
-                //        FetchedScopeKind.ReturnValue,
-                //        returnValue.ToImmutableArray(),
-                //        scope
-                //    ));
-                //}
+            //if (returnValue.Count > 0)
+            //{
+            //    frameScopes.Add(new FetchedScope(
+            //        CurrentUniqueIds.Next(),
+            //        FetchedScopeKind.ReturnValue,
+            //        returnValue.ToImmutableArray(),
+            //        scope
+            //    ));
+            //}
+
+            if (internals.Count > 0)
+            {
+                frameScopes.Add(new FetchedScope(
+                    CurrentUniqueIds.Next(),
+                    FetchedScopeKind.Internals,
+                    internals.ToImmutableArray()
+                ));
             }
 
             StackFrames.Add(new FetchedFrame(
