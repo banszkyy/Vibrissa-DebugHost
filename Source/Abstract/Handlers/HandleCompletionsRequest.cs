@@ -67,14 +67,13 @@ partial class BytecodeDebugAdapterBase
                 }
             }
 
-            foreach (Statement _statement in ast.EnumerateStatements())
+            foreach (Statement _statement in StatementWalker.EnumerateNodes(ast, StatementWalkerFilter.Before(p)).OfType<Statement>())
             {
-                if (_statement.Position.Range.Start > p) continue;
                 if (contextStatement.Count == 0 || _statement.Position.AbsoluteRange.Start >= contextStatement[0].Position.AbsoluteRange.Start)
                 {
                     for (int i = 0; i < contextStatement.Count; i++)
                     {
-                        if (StatementWalker.Visit(contextStatement[i]).Contains(_statement)) continue;
+                        if (StatementWalker.EnumerateNodes(contextStatement[i]).Contains(_statement)) continue;
                         Log.Trace($"{contextStatement[i].GetType().Name} {contextStatement[i]}");
                         contextStatement.RemoveAt(i--);
                     }
