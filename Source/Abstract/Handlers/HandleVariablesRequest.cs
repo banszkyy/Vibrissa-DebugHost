@@ -12,7 +12,7 @@ partial class BytecodeDebugAdapterBase
 {
     protected override VariablesResponse HandleVariablesRequest(VariablesArguments arguments)
     {
-        Log.Trace($"[Handler] Variables");
+        Log.Trace($"[Handler] Variables (ref: {arguments.VariablesReference}, start: {arguments.Start}, count: {arguments.Count}, filter: {arguments.Filter}, format: {arguments.Format})");
 
         if (!Processor.IsValid) return new VariablesResponse();
 
@@ -30,6 +30,7 @@ partial class BytecodeDebugAdapterBase
                 result.Add(new Variable("EBX", Processor.Registers.EBX.ToString(), 0));
                 result.Add(new Variable("ECX", Processor.Registers.ECX.ToString(), 0));
                 result.Add(new Variable("EDX", Processor.Registers.EDX.ToString(), 0));
+                result.Add(new Variable("MEow", Processor.Registers.MEow.ToString(), 0));
             }
 
             foreach (FetchedFrame frame in StackFrames)
@@ -90,9 +91,9 @@ partial class BytecodeDebugAdapterBase
                     }
                     case ArrayType v:
                     {
-                        if (v.Length.HasValue && StatementCompiler.FindSize(v.Of, out int elementSize, out _, CodeGeneratorForMain.DefaultCompilerSettings.RuntimeInfo))
+                        if (v.TryGetLength(out int l) && StatementCompiler.FindSize(v.Of, out int elementSize, out _, CodeGeneratorForMain.DefaultCompilerSettings.RuntimeInfo))
                         {
-                            for (int i = 0; i < v.Length.Value; i++)
+                            for (int i = 0; i < l; i++)
                             {
                                 result.Add(ToVariable(indirectVariable.Address + (i * elementSize), v.Of, Processor.Memory, $"{indirectVariable.ParentName}[{i}]", ref CurrentUniqueIds));
                             }
@@ -104,7 +105,7 @@ partial class BytecodeDebugAdapterBase
                         int offset = 0;
                         foreach (CompiledField item in v.Struct.Fields)
                         {
-                            GeneralType fieldType = GeneralType.TryInsertTypeParameters(item.Type, v.TypeArguments);
+                            GeneralType fieldType = GeneralType.TryInsertTemplateParameters(item.Type, v.TemplateArguments);
                             if (!StatementCompiler.FindSize(fieldType, out int fieldSize, out _, CodeGeneratorForMain.DefaultCompilerSettings.RuntimeInfo))
                             {
                                 break;
@@ -114,7 +115,12 @@ partial class BytecodeDebugAdapterBase
                         }
                         break;
                     }
-                    case GenericType:
+                    case TupleType v:
+                    {
+                        result.Add(ToVariable(indirectVariable.Address, indirectVariable.Type, Processor.Memory, $"*{indirectVariable.ParentName}", ref CurrentUniqueIds));
+                        break;
+                    }
+                    case UnresolvedTemplateType:
                     case AliasType:
                     case EnumType:
                     default:

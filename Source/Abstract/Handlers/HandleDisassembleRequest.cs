@@ -8,15 +8,15 @@ partial class BytecodeDebugAdapterBase
 {
     protected override DisassembleResponse HandleDisassembleRequest(DisassembleArguments arguments)
     {
-        Log.Trace("[Handler] Disassemble");
+        Log.Trace($"[Handler] Disassemble (offset: {arguments.InstructionOffset}, count: {arguments.InstructionCount}, resolveSymbols: {arguments.ResolveSymbols}, offset: {arguments.Offset}, ref: {arguments.MemoryReference}");
 
-        if (!Processor.IsValid || !int.TryParse(arguments.MemoryReference, out int address))
+        if (!Processor.IsValid || !int.TryParse(arguments.MemoryReference, out int offset))
         {
             return new DisassembleResponse();
         }
         else
         {
-            int start = address + (arguments.Offset ?? 0);
+            int start = offset + (arguments.Offset ?? 0);
             int length = arguments.InstructionCount;
 
             List<DisassembledInstruction> result = new();
@@ -28,27 +28,28 @@ partial class BytecodeDebugAdapterBase
                 if (j >= Processor.Code.Length) break;
                 Instruction c = Processor.Code[j];
 
+                DisassembledInstruction r = new()
+                {
+                    Address = j.ToString(),
+                    Instruction = c.ToString(),
+                    PresentationHint = DisassembledInstruction.PresentationHintValue.Normal,
+                };
+
                 if (DebugInformation.TryGetSourceLocation(j, out SourceCodeLocation sourceLocation, true))
                 {
-                    result.Add(new DisassembledInstruction()
-                    {
-                        Address = j.ToString(),
-                        Instruction = c.ToString(),
-                        Line = LineToClient(sourceLocation.Location.Position.Range.Start.Line),
-                        EndLine = LineToClient(sourceLocation.Location.Position.Range.End.Line),
-                        Column = LineToClient(sourceLocation.Location.Position.Range.Start.Character),
-                        EndColumn = LineToClient(sourceLocation.Location.Position.Range.End.Character),
-                        Location = ToSource(sourceLocation.Location.File),
-                    });
+                    r.Line = LineToClient(sourceLocation.Location.Position.Range.Start.Line);
+                    r.EndLine = LineToClient(sourceLocation.Location.Position.Range.End.Line);
+                    r.Column = LineToClient(sourceLocation.Location.Position.Range.Start.Character);
+                    r.EndColumn = LineToClient(sourceLocation.Location.Position.Range.End.Character);
+                    r.Location = ToSource(sourceLocation.Location.File);
                 }
-                else
+
+                if (DebugInformation.TryGetFunctionInformation(j, out FunctionInformation function))
                 {
-                    result.Add(new DisassembledInstruction()
-                    {
-                        Address = j.ToString(),
-                        Instruction = c.ToString(),
-                    });
+                    r.Symbol = function.ReadableIdentifier();
                 }
+
+                result.Add(r);
             }
 
             return new DisassembleResponse(result);

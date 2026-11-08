@@ -228,13 +228,16 @@ partial class BytecodeDebugAdapterBase
                         case BasicType.Any:
                         default:
                             diagnostics.Add(DiagnosticAt.Error($"Cannot convert a value of type {resultType.FinalValue} to boolean", compiled.Statements[0]));
-                            return false; ;
+                            return false;
                     }
                 case PointerType:
                 case ReferenceType:
                 case FunctionType:
                     result = m.Get<int>(resultAddress) != 0;
                     return true;
+                case TupleType:
+                    diagnostics.Add(DiagnosticAt.Error($"Cannot convert a tuple value to boolean", compiled.Statements[0]));
+                    return false;
                 default:
                     diagnostics.Add(DiagnosticAt.Error($"Cannot convert a value of type {resultType.FinalValue} to boolean", compiled.Statements[0]));
                     return false;

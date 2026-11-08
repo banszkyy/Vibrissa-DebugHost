@@ -58,9 +58,12 @@ partial class BytecodeDebugAdapter
 
                     if (StopReason is not StopReason_StepInstruction)
                     {
-                        if (sourceLocation.IsSubtle || !DebugInformation.TryGetSourceLocation(_processor.Registers.CodePointer, out sourceLocation))
+                        if (!DebugInformation.TryGetSourceLocation(_processor.Registers.CodePointer, out sourceLocation) || sourceLocation.IsSubtle)
                         {
-                            goto _procceed;
+                            if (StopReason is not StopReason_Pause)
+                            {
+                                goto _procceed;
+                            }
                         }
 
                         if (LastStopContext is not null)
@@ -96,7 +99,7 @@ partial class BytecodeDebugAdapter
                     switch (StopReason)
                     {
                         case null:
-                            Log.Trace("[#] Stopped for no reason");
+                            Log.Error("[#] Stopped for no reason");
                             throw new InvalidOperationException("Stopped for no reason");
                         case StopReason_StepForward:
                         case StopReason_StepIn:

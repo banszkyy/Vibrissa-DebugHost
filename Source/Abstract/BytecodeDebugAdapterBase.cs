@@ -287,7 +287,8 @@ public abstract partial class BytecodeDebugAdapterBase : DebugAdapterBase
                         int pointerValue = memory.Get<int>(address.Start);
                         variable.Value = $"0x{Convert.ToString(pointerValue, 16)}";
 
-                        if (v.To.Is(out ArrayType? toArray)
+                        if (pointerValue != 0
+                            && v.To.Is(out ArrayType? toArray)
                             && (internalType == InternalTypes.String || GetInternalType(toArray.Of) == InternalTypes.Char)
                             && StatementCompiler.FindSize(toArray.Of, out int elementSize, out _, CodeGeneratorForMain.DefaultCompilerSettings.RuntimeInfo))
                         {
@@ -324,14 +325,14 @@ public abstract partial class BytecodeDebugAdapterBase : DebugAdapterBase
                     }
                     case ArrayType v:
                     {
-                        if (v.Length.HasValue && StatementCompiler.FindSize(v.Of, out int elementSize, out _, CodeGeneratorForMain.DefaultCompilerSettings.RuntimeInfo))
+                        if (v.TryGetLength(out int l) && StatementCompiler.FindSize(v.Of, out int elementSize, out _, CodeGeneratorForMain.DefaultCompilerSettings.RuntimeInfo))
                         {
                             variable.Value = "[...]";
 
                             if (internalType == InternalTypes.String || GetInternalType(v.Of) == InternalTypes.Char)
                             {
                                 StringBuilder valueBuilder = new();
-                                for (int i = 0; i < v.Length.Value; i++)
+                                for (int i = 0; i < l; i++)
                                 {
                                     if (TryGetInteger(new Range<int>(address.Start + (i * elementSize), address.Start + ((i + 1) * elementSize) - 1), memory, v.Of, out int element))
                                     {
@@ -346,7 +347,7 @@ public abstract partial class BytecodeDebugAdapterBase : DebugAdapterBase
                             }
                         failed:
 
-                            variable.IndexedVariables = v.Length.Value;
+                            variable.IndexedVariables = l;
                             variable.VariablesReference = DiscoverIndirectVariables(address.Start, v, memory, name, ref ids);
                         }
                         else
@@ -371,6 +372,7 @@ public abstract partial class BytecodeDebugAdapterBase : DebugAdapterBase
                     case EnumType v:
                         if (TryGetValue(address, memory, v.Definition.Type.FinalValue, out CompiledValue w))
                         {
+                            variable.Value = v.ToString();
                             foreach (CompiledEnumMember member in v.Definition.Members)
                             {
                                 if (member.Value is CompiledConstantValue x && x.Value == w)
@@ -384,8 +386,12 @@ public abstract partial class BytecodeDebugAdapterBase : DebugAdapterBase
                         continue;
                     case AliasType:
                         throw new UnreachableException();
-                    case GenericType v:
-                        variable.Value = v.Identifier;
+                    case UnresolvedTemplateType v:
+                        variable.Type = v.Identifier;
+                        break;
+                    case TupleType:
+                        // TODO
+                        variable.Value = "(...)";
                         break;
                     default:
                         throw new UnreachableException();
@@ -404,7 +410,7 @@ public abstract partial class BytecodeDebugAdapterBase : DebugAdapterBase
         {
             foreach ((GeneralType Type, int Id, int Address, string ParentName) indirectVariable in IndirectVariables)
             {
-                if (indirectVariable.Address != pointerValue) continue;
+                if (indirectVariable.Address != pointerValue || indirectVariable.ParentName != parentName || !indirectVariable.Type.Equals(type)) continue;
                 return indirectVariable.Id;
             }
             int id = ids.Next();
@@ -419,7 +425,7 @@ public abstract partial class BytecodeDebugAdapterBase : DebugAdapterBase
 
     protected void GatherInformation()
     {
-        bool logs = false;
+        bool logs = true;
         StackFrames.Clear();
         IndirectVariables.Clear();
         CurrentUniqueIds = new UniqueIds();
@@ -434,9 +440,9 @@ public abstract partial class BytecodeDebugAdapterBase : DebugAdapterBase
 
         foreach (CallTraceItem frame in trace)
         {
-            if (frame.InstructionPointer <= 0 || frame.InstructionPointer >= Processor.Code.Length)
+            if (frame.InstructionPointer < 0 || frame.InstructionPointer >= Processor.Code.Length)
             {
-                if (logs) Log.Trace($"Skipping invalid stack frame {frame} (IP out of range [1..{Processor.Code.Length}])");
+                if (logs) Log.Trace($"Skipping invalid stack frame {frame} (IP out of range [0..{Processor.Code.Length - 1}])");
                 continue;
             }
 
@@ -446,7 +452,7 @@ public abstract partial class BytecodeDebugAdapterBase : DebugAdapterBase
 
             if (!f.IsValid)
             {
-                if (logs) Log.Trace($"Skipping invalid stack frame {frame} (invalid function)");
+                if (logs) Log.Trace($"Invalid stack frame {frame} (invalid function)");
                 StackFrames.Add(new FetchedFrame(
                     CurrentUniqueIds.Next(),
                     frame,
@@ -462,7 +468,7 @@ public abstract partial class BytecodeDebugAdapterBase : DebugAdapterBase
 
             if (_scopes.IsDefaultOrEmpty)
             {
-                if (logs) Log.Trace($"Skipping invalid stack frame {frame} (no scopes)");
+                if (logs) Log.Trace($"Invalid stack frame {frame} (no scopes)");
                 StackFrames.Add(new FetchedFrame(
                     CurrentUniqueIds.Next(),
                     frame,
