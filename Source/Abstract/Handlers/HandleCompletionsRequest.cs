@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Linq;
 using LanguageCore;
 using LanguageCore.Bytecode.Generator;
@@ -47,6 +48,40 @@ partial class BytecodeDebugAdapterBase
 
             void AddExpressionItems()
             {
+                foreach (CompiledFunction function in compiled.Functions.Where(v => v.Body.Location.Position.Range.Contains(p)))
+                {
+                    foreach (CompiledParameter parameter in function.Function.Parameters)
+                    {
+                        result.Add(new CompletionItem()
+                        {
+                            Type = CompletionItemType.Variable,
+                            Label = parameter.Identifier,
+                        });
+                    }
+
+                    foreach (CapturedLocal capturedLocal in function.CapturedLocals)
+                    {
+                        result.Add(new CompletionItem()
+                        {
+                            Type = CompletionItemType.Variable,
+                            Label = capturedLocal.Parameter?.Identifier ?? capturedLocal.Variable?.Identifier ?? throw new UnreachableException(),
+                            Detail = "(captured)",
+                        });
+                    }
+                }
+
+                foreach (CompiledBlock item in StatementWalker.EnumerateNodes(compiled, v => v.Location.Position.Range.Contains(p)).OfType<CompiledBlock>())
+                {
+                    foreach (CompiledVariableDefinition variable in item.Statements.OfType<CompiledVariableDefinition>())
+                    {
+                        result.Add(new CompletionItem()
+                        {
+                            Type = CompletionItemType.Variable,
+                            Label = variable.Identifier,
+                        });
+                    }
+                }
+
                 foreach (CompiledFunctionDefinition function in compiled.FunctionDefinitions)
                 {
                     if (!function.Definition.CanUse(compiled.File)) continue;
@@ -55,14 +90,27 @@ partial class BytecodeDebugAdapterBase
                     functionOverloads[function.Identifier] = value + 1;
                 }
 
-                foreach (VariableDefinition variable in ast.TopLevelStatements.OfType<VariableDefinition>())
+                foreach (CompiledVariableDefinition variable in compiled.Statements.OfType<CompiledVariableDefinition>())
                 {
-                    if (!variable.CanUse(compiled.File)) continue;
+                    if (!variable.Definition.CanUse(compiled.File)) continue;
+                    if (!variable.IsGlobal) continue;
+                    if (variable.IsOnlyUsedLocally) continue;
 
                     result.Add(new CompletionItem()
                     {
                         Type = CompletionItemType.Variable,
-                        Label = variable.Identifier.Content,
+                        Label = variable.Identifier,
+                    });
+                }
+
+                foreach (CompiledVariableConstant constant in compiled.CompiledConstants)
+                {
+                    if (!constant.Definition.CanUse(compiled.File)) continue;
+
+                    result.Add(new CompletionItem()
+                    {
+                        Type = CompletionItemType.Variable,
+                        Label = constant.Identifier,
                     });
                 }
             }
@@ -88,79 +136,70 @@ partial class BytecodeDebugAdapterBase
 
             if (contextStatement.Count > 0)
             {
-                if (contextStatement[^1] is IdentifierExpression identifier
-                    && contextStatement.Count > 1
-                    && contextStatement[^2] is FieldExpression fieldExpression)
+                if (contextStatement[0] is FieldExpression fieldExpression)
                 {
-                    if (fieldExpression.Object == identifier)
+                    if (fieldExpression.Object.CompiledType is not null)
                     {
-                        if (fieldExpression.Object.CompiledType is not null)
+                        List<GeneralType> checkTypes = new();
+
                         {
-                            List<GeneralType> checkTypes = new();
-
+                            GeneralType prevType = fieldExpression.Object.CompiledType;
+                            checkTypes.Add(prevType);
+                            checkTypes.Add(new ReferenceType(prevType));
+                            checkTypes.Add(new PointerType(prevType));
+                            while (true)
                             {
-                                GeneralType prevType = fieldExpression.Object.CompiledType;
-                                checkTypes.Add(prevType);
-                                checkTypes.Add(new ReferenceType(prevType));
-                                checkTypes.Add(new PointerType(prevType));
-                                while (true)
+                                if (prevType.Is(out PointerType? pointerType2))
                                 {
-                                    if (prevType.Is(out PointerType? pointerType2))
-                                    {
-                                        prevType = pointerType2.To;
-                                        checkTypes.Add(prevType);
-                                    }
-                                    else if (prevType.Is(out ReferenceType? referenceType2))
-                                    {
-                                        prevType = referenceType2.To;
-                                        checkTypes.Add(prevType);
-                                    }
-                                    else
-                                    {
-                                        break;
-                                    }
+                                    prevType = pointerType2.To;
+                                    checkTypes.Add(prevType);
                                 }
-                            }
-
-                            foreach (GeneralType prevType in checkTypes)
-                            {
-                                Log.Trace($"{prevType}");
-                                if (prevType is StructType structType)
+                                else if (prevType.Is(out ReferenceType? referenceType2))
                                 {
-                                    foreach (CompiledField item in structType.Struct.Fields)
-                                    {
-                                        result.Add(new CompletionItem()
-                                        {
-                                            Type = CompletionItemType.Field,
-                                            Label = item.Identifier,
-                                            Detail = item.Type.ToString(),
-                                        });
-                                    }
+                                    prevType = referenceType2.To;
+                                    checkTypes.Add(prevType);
                                 }
-
-                                foreach (CompiledFunctionDefinition function in compiled.FunctionDefinitions)
+                                else
                                 {
-                                    if (!function.Definition.CanUse(compiled.File)) continue;
-                                    if (function.Parameters.Length <= 0) continue;
-                                    if (!function.Parameters[0].Definition.IsThis) continue;
-                                    if (!function.Parameters[0].Type.Equals(prevType)) continue;
-
-                                    if (!functionOverloads.TryGetValue(function.Identifier, out int value)) value = 0;
-                                    functionOverloads[function.Identifier] = value + 1;
+                                    break;
                                 }
                             }
                         }
-                        else
+
+                        foreach (GeneralType prevType in checkTypes)
                         {
-                            Log.Warn($"Missing type on {fieldExpression.Object.GetType().Name} {fieldExpression.Object}");
+                            Log.Trace($"{prevType}");
+                            if (prevType is StructType structType)
+                            {
+                                foreach (CompiledField item in structType.Struct.Fields)
+                                {
+                                    result.Add(new CompletionItem()
+                                    {
+                                        Type = CompletionItemType.Field,
+                                        Label = item.Identifier,
+                                        Detail = item.Type.ToString(),
+                                    });
+                                }
+                            }
+
+                            foreach (CompiledFunctionDefinition function in compiled.FunctionDefinitions)
+                            {
+                                if (!function.Definition.CanUse(compiled.File)) continue;
+                                if (function.Parameters.Length <= 0) continue;
+                                if (!function.Parameters[0].Definition.IsThis) continue;
+                                if (!function.Parameters[0].Type.Equals(prevType)) continue;
+
+                                if (!functionOverloads.TryGetValue(function.Identifier, out int value)) value = 0;
+                                functionOverloads[function.Identifier] = value + 1;
+                            }
                         }
                     }
                     else
                     {
-                        Log.Warn($"Field identifier mismatch: {fieldExpression.Object.GetType().Name} {fieldExpression.Object} != {identifier.GetType().Name} {identifier}");
+                        Log.Warn($"Missing type on {fieldExpression.Object.GetType().Name} {fieldExpression.Object}");
                     }
                 }
-                else if (contextStatement[^1] is MissingExpression)
+                else if (contextStatement[0] is MissingExpression)
                 {
                     AddExpressionItems();
                 }
