@@ -71,7 +71,7 @@ partial class BytecodeDebugAdapterBase
         {
             SinglePosition pos = new(LineFromClient(breakpoint.Line), ColumnFromClient(breakpoint.Column ?? ClientsFirstColumn));
 
-            Log.Trace($"Trying to set breakpoint at {uri} {pos.ToStringMin()}");
+            Log.Trace($"Trying to set breakpoint at {uri} {pos.ToReadable()}");
 
             if (TryGetBreakpointLocation(uri, pos, out SourceCodeLocation selectedInstructions))
             {

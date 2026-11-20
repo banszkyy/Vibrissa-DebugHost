@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Text;
 using System.Threading;
 using LanguageCore;
@@ -138,7 +139,7 @@ partial class BytecodeDebugAdapter
                             });
                             break;
                         default:
-                            throw new NotImplementedException(StopReason.GetType().Name);
+                            throw new UnreachableException(StopReason.GetType().Name);
                     }
                 }
 
